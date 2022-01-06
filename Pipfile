@@ -1,0 +1,17 @@
+[[source]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+jupyterlab = "*"
+numpy = "<1.20"
+librosa = "*"
+matplotlib = "*"
+tensorflow = ">2.0"
+sklearn = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.9"
