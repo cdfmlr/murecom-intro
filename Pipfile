@@ -10,6 +10,8 @@ librosa = "*"
 matplotlib = "*"
 tensorflow = ">2.0"
 sklearn = "*"
+pandas = "*"
+tqdm = "*"
 
 [dev-packages]
 
