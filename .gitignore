@@ -1,2 +1,6 @@
 /spotify-key.json
 /.cache
+/spotify/config.json
+/spotify/spotifyplaylists
+/spotify/lastrun.txt
+/spotify/*.db
