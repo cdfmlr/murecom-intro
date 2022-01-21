@@ -14,6 +14,7 @@ pandas = "*"
 tqdm = "*"
 spotipy = "*"
 gensim = "*"
+scikit-surprise = "*"
 
 [dev-packages]
 

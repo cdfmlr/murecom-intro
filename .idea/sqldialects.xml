@@ -2,5 +2,7 @@
 <project version="4">
   <component name="SqlDialectMappings">
     <file url="notebook:///Users/c/Projects/murecom/intro/spotify-playlists.ipynb" dialect="SQLite" />
+    <file url="notebook:///Users/c/Projects/murecom/intro/surprise.ipynb" dialect="SQLite" />
+    <file url="PROJECT" dialect="SQLite" />
   </component>
 </project>
