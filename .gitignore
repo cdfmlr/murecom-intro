@@ -1,3 +1,5 @@
+.DS_Store
+*/.DS_Store
 /spotify-key.json
 /.cache
 /spotify/config.json
