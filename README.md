@@ -324,3 +324,8 @@ def find_sim(track_id, k=5):
 
 这个想法计划在 `murecom-verse-1` 中实现。
 
+## 参考文献
+
+[1] Douwe Osinga. Deep Learning Cookbook[M]. O'Reilly, 2018: 210-227.
+
+[2] Nicolas Hug. Surprise: A Python library for recommender systems[J]. Journal of Open Source Software, 2020, 5(52): 2174.
