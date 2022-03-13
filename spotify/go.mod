@@ -1,4 +1,4 @@
-module spotifyplaylist
+module github.com/cdfmlr/murecom-intro/spotify
 
 go 1.17
 
