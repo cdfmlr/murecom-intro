@@ -2,10 +2,10 @@ package nlp
 
 import (
 	"container/heap"
+	"github.com/cdfmlr/murecom-intro/spotify/priority"
 	"log"
 	"regexp"
 	"sort"
-	"spotifyplaylist/priority"
 	"strings"
 	"sync"
 )

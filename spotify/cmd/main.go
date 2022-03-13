@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+	spotify "github.com/cdfmlr/murecom-intro/spotify"
 	"os"
 	"path"
 	"runtime/pprof"
-	spotify "spotifyplaylist"
 	"strings"
 	"time"
 )

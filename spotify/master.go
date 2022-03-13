@@ -2,8 +2,8 @@ package spotify
 
 import (
 	"fmt"
+	"github.com/cdfmlr/murecom-intro/spotify/nlp"
 	"github.com/zmb3/spotify"
-	"spotifyplaylist/nlp"
 	"sync"
 	"time"
 )
