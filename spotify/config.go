@@ -6,9 +6,6 @@ import (
 	"os"
 )
 
-// ConfigFile  TODO: ENV
-const ConfigFile = "config.json"
-
 var Config struct {
 	ClientID     string   `json:"client_id"`
 	ClientSecret string   `json:"client_secret"`
@@ -20,8 +17,8 @@ var Config struct {
 }
 
 // InitConfig read the config file
-func InitConfig() {
-	f, err := os.Open(ConfigFile)
+func InitConfig(configfile string) {
+	f, err := os.Open(configfile)
 	if err != nil {
 		panic("failed to load config: " + err.Error())
 	}

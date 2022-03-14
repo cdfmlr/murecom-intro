@@ -1,7 +1,7 @@
 package spotify
 
-func init() {
-	InitConfig()
+func InitAll(configfile string) {
+	InitConfig(configfile)
 	InitDB()
 	InitAuth()
 	InitSeenWords()

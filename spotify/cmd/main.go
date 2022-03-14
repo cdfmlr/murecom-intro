@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	spotify "github.com/cdfmlr/murecom-intro/spotify"
 	"os"
@@ -10,12 +11,19 @@ import (
 	"time"
 )
 
+var configFile = flag.String("config", "config.json", "/path/to/config/file")
+
 // Profile for debug
 const (
 	Profile = false
 )
 
 func main() {
+	flag.Parse()
+
+	fmt.Printf("spotify init all, using config file: %v\n", *configFile)
+	spotify.InitAll(*configFile)
+
 	st := strings.ReplaceAll(time.Now().Format(time.RFC3339), ":", "-")
 	if Profile {
 		f, err := os.Create(path.Join(
