@@ -1,0 +1,282 @@
+from dataclasses import dataclass
+import sqlite3
+import argparse
+from abc import ABC, abstractmethod
+from typing import List, Any
+
+import pandas as pd
+import surprise
+from surprise import KNNBaseline
+from surprise import Reader, Dataset
+import joblib
+from aiohttp import web
+
+
+# TODO: 数据集选取：order by
+
+class ModelTrainer(ABC):
+    model: Any
+
+    @abstractmethod
+    def train_model(self):
+        raise NotImplemented
+
+    def save_model(self, filename):
+        if self.model is None:
+            raise ValueError("attempt to save None model.")
+        ModelPersistence.save(self.model, filename)
+
+
+class SurpriseModelTrainer(ModelTrainer):
+    def __init__(self, db, data_count=10000, algo=KNNBaseline):
+        self._db = db
+        self._data_count = data_count
+        self._algo = algo
+
+        self._conn = sqlite3.connect(self._db)
+        self._pt = pd.read_sql(f"SELECT * FROM playlist_tracks LIMIT {self._data_count}", self._conn)
+
+        self.model: surprise.AlgoBase = None
+
+        self._init_data()
+
+    def _init_data(self):
+        # 播放列表 -> 用户, 曲目 -> 电影
+        self._pt = self._pt.rename(columns={"playlist_id": "userID", "track_id": "itemID"})
+
+        # 歌在播放列表里，就是用户给歌打了一分
+        self._pt = self._pt.join(pd.Series([1] * len(self._pt), name="rating"))
+
+        # 洗牌
+        self._pt = self._pt.sample(frac=1)
+
+        # surprise: custom dataset
+        reader = Reader(rating_scale=(0, 1))
+        self._train_data = Dataset.load_from_df(
+            self._pt[['userID', 'itemID', 'rating']],
+            reader)
+        self._train_set = self._train_data.build_full_trainset()
+
+    def train_model(self):
+        sim_options = {
+            'user_based': False  # compute  similarities between items
+        }
+
+        # 训练
+        self.model = self._algo(sim_options=sim_options)
+        self.model.fit(self._train_set)
+
+
+train_algos = {'KNNBaseline': KNNBaseline}
+
+
+class ModelPersistence(object):
+    """Model persistence with joblib
+    """
+
+    @staticmethod
+    def save(model, filename, compress=True):
+        """Save model into filename
+
+        :param model: model to save
+        :param filename: pah to saving file
+        :param compress: Optional compression level for the data. 0 or False is
+            no compression. Higher value means more compression, but also slower
+            read and write times. Using a value of 3 is often a good compromise.
+            If compress is True, the compression level used is 3.
+        :return: The list of file names in which the data is stored.
+        """
+        names = joblib.dump(model, filename, compress=compress)
+        print("saved:", names)
+        return names
+
+    @staticmethod
+    def load(filename):
+        """load a saved model
+
+        :param filename: the saved file
+        :return: model
+        """
+        return joblib.load(filename)
+
+
+@dataclass
+class NextSongSeed(object):
+    track_name: str
+    artists: List[str]
+
+
+@dataclass
+class NextSong(object):
+    track_id: str
+    track_name: str
+    artists: List[str]
+
+
+class TrackMatcher(ABC):
+    def __init__(self, tid: str, track_name: str, track_artists: List[str]):
+        """tid matches track_name + track_artists
+        """
+        self.tid = tid
+        self.track_name = track_name
+        self.track_artists = track_artists
+
+    @abstractmethod
+    def is_matched(self, *args, **kwargs) -> bool:
+        raise NotImplemented
+
+    def __call__(self, *args, **kwargs):
+        return self.is_matched(*args, **kwargs)
+
+
+class AlwaysMatcher(TrackMatcher):
+    """Always returns True. Not recommended.
+    """
+
+    def is_matched(self, *args, **kwargs) -> bool:
+        return True
+
+
+class NextSongRecommender(ABC):
+    @abstractmethod
+    def recommend_next_song(self, seed: NextSongSeed, k=5):
+        raise NotImplemented
+
+
+class SurpriseRecommender(NextSongRecommender):
+    def __init__(self, db, model_filename):
+        self._db = db
+        self._conn = sqlite3.connect(self._db)
+
+        self.model = ModelPersistence.load(filename=model_filename)
+
+    def find_artists(self, track_id: str) -> list:
+        c = self._conn.cursor()  # get artists
+        c.execute(
+            "select a.name from artists a inner join track_artists ta on a.id = ta.artist_id where ta.track_id=?",
+            (track_id,))
+        a = [a[0] for a in c.fetchall()]
+        c.close()
+        return a
+
+    def find_track_id(self, name: str, artists: List[str], limit=50, matcher=AlwaysMatcher) -> str:
+        """find a track in db.
+        Returns the found id, or else raises a ValueError
+
+        :param name: track name
+        :param artists: track artists list
+        :return: id
+        """
+        c = self._conn.cursor()
+        # 用 FTS 优化: https://www.sqlite.org/fts5.html
+        #   CREATE VIRTUAL TABLE tracks_name_fts USING fts5(name, id);
+        #   INSERT INTO tracks_name_fts SELECT name, id FROM tracks;
+        c.execute(f"SELECT id FROM tracks_name_fts WHERE name MATCH '{name}' LIMIT {limit}")
+        name_matched_ids = c.fetchall()
+
+        for tid in name_matched_ids:
+            if matcher(tid, name, artists)():
+                return tid
+        raise ValueError("track not found")
+
+    def find_sim(self, track_id, k=5) -> list:
+        """ 找和 track_id 曲目最相近的 k 首歌
+
+        :return: list of tracks [{id, name, artists}, ...] : len=(k+1), [0] 是输入的 track_id
+        """
+        sim = self.model.get_neighbors(iid=self.model.trainset.to_inner_iid(track_id), k=k)
+
+        c = self._conn.cursor()
+
+        track_ids = [track_id] + list(
+            map(self.model.trainset.to_raw_iid, sim))
+        print(track_ids)
+
+        tracks = []
+        for tid in track_ids:
+            c.execute(f"SELECT * FROM tracks WHERE id = '{tid}'")
+            tk = c.fetchall()
+            if len(tk) < 1:
+                print("fetch track: len(tk) < 1:", tk)
+                continue
+            tk = tk[0]
+            tracks.append(tk + (self.find_artists(tid),))
+        c.close()
+
+        return [{"id": r[4], "name": r[5], "artists": r[-1]} for r in tracks]
+
+    def recommend_next_song(self, seed: NextSongSeed, k=5) -> List[NextSong]:
+        seed_id = self.find_track_id(seed.track_name, seed.artists)
+        recommended = self.find_sim(seed_id, k)
+        return list(
+            map(lambda x: NextSong(x["id"], x["name"], x["artists"]),
+                recommended)
+        )
+
+
+class Server:
+    def __init__(self, recommender: NextSongRecommender):
+        self.recommender = recommender
+
+    async def recommend_handler(self, request: web.Request):
+        track_name = request.query.get("track_name") or ""
+        artists = request.get("artists") or ""
+        k = request.query.get("k") or 5
+
+        if track_name == artists == "":
+            raise web.HTTPBadRequest(text="seed track_name and artists expected")
+
+        try:
+            recommended = self.recommender.recommend_next_song(
+                seed=NextSongSeed(track_name, artists), k=k)
+            return web.json_response(recommended)
+        except ValueError as e:
+            if "not part of the trainset" in str(e):
+                raise web.HTTPNotFound(text=str(e))
+
+
+# region cli
+
+def run_service(db: str, model_file: str):
+    recommender = SurpriseRecommender(db, model_file)
+    server = Server(recommender)
+
+    app = web.Application()
+    app.add_routes([web.get('/next-song', server.recommend_handler)])
+
+    web.run_app(app)
+
+
+def run_train(db: str, model_file: str, data_count: int = 10000, algo: str = 'KNNBaseline'):
+    assert algo in train_algos, 'unknown algo'
+
+    trainer = SurpriseModelTrainer(db, data_count=data_count, algo=train_algos[algo])
+
+    trainer.train_model()
+
+    trainer.save_model(model_file)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser("murecom-intro", description="a next-song recommender")
+    subparsers = parser.add_subparsers(help="sub commands")
+
+    parser_service = subparsers.add_parser("service")
+    parser_service.add_argument("--db", type=str, help="path to SQLite database", required=True)
+    parser_service.add_argument("--model", type=str, help="path to save trained model", required=True)
+    parser_service.set_defaults(func=lambda args: run_service(args.db, args.model))
+
+    parser_train = subparsers.add_parser("train")
+    parser_train.add_argument("--db", type=str, help="path to SQLite database", required=True)
+    parser_train.add_argument("--model", type=str, help="path to save trained model", required=True)
+    parser_train.add_argument("--data-count", type=int, help="data count in the train-set", default=10000)
+    parser_train.add_argument("--algo", type=str, help="algorithm to build the model", default="KNNBaseline")
+    parser_train.set_defaults(func=lambda args: run_train(args.db, args.model, args.data_count, args.algo))
+
+    args = parser.parse_args()
+    try:
+        args.func(args)
+    except AttributeError:  # 'Namespace' object has no attribute 'func'
+        parser.print_usage()
+
+# endregion cli

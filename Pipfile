@@ -15,6 +15,7 @@ tqdm = "*"
 spotipy = "*"
 gensim = "*"
 scikit-surprise = "*"
+aiohttp = "*"
 
 [dev-packages]
 
