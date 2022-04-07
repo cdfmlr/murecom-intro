@@ -12,8 +12,6 @@ import joblib
 from aiohttp import web
 
 
-# TODO: 数据集选取：order by
-
 class ModelTrainer(ABC):
     model: Any
 
@@ -34,13 +32,17 @@ class SurpriseModelTrainer(ModelTrainer):
         self._algo = algo
 
         self._conn = sqlite3.connect(self._db)
-        self._pt = pd.read_sql(f"SELECT * FROM playlist_tracks LIMIT {self._data_count}", self._conn)
+        self._pt = None
 
         self.model: surprise.AlgoBase = None
 
         self._init_data()
 
     def _init_data(self):
+        self._pt = pd.read_sql(f"SELECT * FROM playlist_tracks LIMIT {self._data_count}",
+                               self._conn)
+
+
         # 播放列表 -> 用户, 曲目 -> 电影
         self._pt = self._pt.rename(columns={"playlist_id": "userID", "track_id": "itemID"})
 
@@ -139,7 +141,7 @@ class AlwaysMatcher(TrackMatcher):
 
 class NextSongRecommender(ABC):
     @abstractmethod
-    def recommend_next_song(self, seed: NextSongSeed, k=5):
+    def recommend_next_song(self, seed: NextSongSeed, k=5) -> List[NextSong]:
         raise NotImplemented
 
 
@@ -172,9 +174,10 @@ class SurpriseRecommender(NextSongRecommender):
         #   CREATE VIRTUAL TABLE tracks_name_fts USING fts5(name, id);
         #   INSERT INTO tracks_name_fts SELECT name, id FROM tracks;
         c.execute(f"SELECT id FROM tracks_name_fts WHERE name MATCH '{name}' LIMIT {limit}")
-        name_matched_ids = c.fetchall()
+        name_matched_ids = c.fetchall()  # [(id, ), ...]
 
-        for tid in name_matched_ids:
+        for res in name_matched_ids:
+            tid = res[0]
             if matcher(tid, name, artists)():
                 return tid
         raise ValueError("track not found")
@@ -229,7 +232,7 @@ class Server:
         try:
             recommended = self.recommender.recommend_next_song(
                 seed=NextSongSeed(track_name, artists), k=k)
-            return web.json_response(recommended)
+            return web.json_response(list(map(lambda r: r.__dict__, recommended)))
         except ValueError as e:
             if "not part of the trainset" in str(e):
                 raise web.HTTPNotFound(text=str(e))
