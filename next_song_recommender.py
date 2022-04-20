@@ -226,7 +226,7 @@ class Server:
     async def recommend_handler(self, request: web.Request):
         track_name = request.query.get("track_name") or ""
         artists = request.get("artists") or ""
-        k = request.query.get("k") or 5
+        k = int(request.query.get("k") or 5)
 
         if track_name == artists == "":
             raise web.HTTPBadRequest(text="seed track_name and artists expected")
