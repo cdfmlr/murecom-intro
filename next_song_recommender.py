@@ -1,3 +1,5 @@
+import time
+import traceback
 from dataclasses import dataclass
 import sqlite3
 import argparse
@@ -6,6 +8,7 @@ from typing import List, Any
 
 import pandas as pd
 import surprise
+from aiohttp.web_exceptions import HTTPException
 from surprise import KNNBaseline
 from surprise import Reader, Dataset
 import joblib
@@ -41,7 +44,6 @@ class SurpriseModelTrainer(ModelTrainer):
     def _init_data(self):
         self._pt = pd.read_sql(f"SELECT * FROM playlist_tracks LIMIT {self._data_count}",
                                self._conn)
-
 
         # 播放列表 -> 用户, 曲目 -> 电影
         self._pt = self._pt.rename(columns={"playlist_id": "userID", "track_id": "itemID"})
@@ -193,7 +195,7 @@ class SurpriseRecommender(NextSongRecommender):
 
         track_ids = [track_id] + list(
             map(self.model.trainset.to_raw_iid, sim))
-        print(track_ids)
+        # print(track_ids)
 
         tracks = []
         for tid in track_ids:
@@ -234,20 +236,90 @@ class Server:
                 seed=NextSongSeed(track_name, artists), k=k)
             return web.json_response(list(map(lambda r: r.__dict__, recommended)))
         except ValueError as e:
-            if "not part of the trainset" in str(e):
+            not_founds = ['not part of the trainset', 'track not found']
+            if any(n in str(e) for n in not_founds):
                 raise web.HTTPNotFound(text=str(e))
+            print(f'[ERROR] {time.ctime(time.time())} Server got an unknown ValueError:', e)
+            traceback.print_exc()
+            raise web.HTTPInternalServerError(text=str(e))
+
+
+# region cors
+
+
+CORS_HEADERS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': '*',
+    'Access-Control-Allow-Headers': '*',
+    'Access-Control-Allow-Credentials': 'true',
+}
+
+
+@web.middleware
+async def cors_middleware(request, handler):
+    """用来解决 cors
+    `app = web.Application(middlewares=[cors_middleware])`
+    """
+    # if request.method == 'OPTIONS':
+    #     response = web.Response(text="")
+    # else:
+    try:
+        response = await handler(request)
+
+        for k, v in CORS_HEADERS.items():
+            response.headers[k] = v
+
+        return response
+    except HTTPException as e:
+        for k, v in CORS_HEADERS.items():
+            e.headers[k] = v
+        raise e
+
+
+async def empty_handler(request):
+    """给每个 route 配上一个对应的 options empty_handler 即可解决 cors 问题:
+    `web.options('...', empty_handler)`
+    """
+    return web.Response()
+
+
+# endregion cors
+
+# region logger
+
+def log(level, request, response):
+    print(f"[{level}] {time.ctime(time.time())} {request.method} {request.rel_url} -> {response.status}")  # log
+
+
+@web.middleware
+async def log_middleware(request, handler):
+    try:
+        response = await handler(request)
+        log('INFO', request, response)
+        return response
+    except HTTPException as e:
+        log('WARN', request, e)
+        raise e
+
+
+# endregion logger
 
 
 # region cli
 
-def run_service(db: str, model_file: str):
+def run_service(db: str, model_file: str, host: str, port: int):
     recommender = SurpriseRecommender(db, model_file)
     server = Server(recommender)
 
-    app = web.Application()
-    app.add_routes([web.get('/next-song', server.recommend_handler)])
+    app = web.Application(middlewares=[log_middleware, cors_middleware])
+    app.add_routes([
+        web.get('/next-song', server.recommend_handler),
+        # cors
+        web.options('/next-song', empty_handler),
+        web.options('/', empty_handler),
+    ])
 
-    web.run_app(app)
+    web.run_app(app, host=host, port=port)
 
 
 def run_train(db: str, model_file: str, data_count: int = 10000, algo: str = 'KNNBaseline'):
@@ -267,7 +339,10 @@ if __name__ == '__main__':
     parser_service = subparsers.add_parser("service")
     parser_service.add_argument("--db", type=str, help="path to SQLite database", required=True)
     parser_service.add_argument("--model", type=str, help="path to save trained model", required=True)
-    parser_service.set_defaults(func=lambda args: run_service(args.db, args.model))
+    parser_service.add_argument("--host", type=str, help="server host", default="localhost")
+    parser_service.add_argument("--port", type=int, help="listen port", default=8080)
+
+    parser_service.set_defaults(func=lambda args: run_service(args.db, args.model, args.host, args.port))
 
     parser_train = subparsers.add_parser("train")
     parser_train.add_argument("--db", type=str, help="path to SQLite database", required=True)
