@@ -33,7 +33,7 @@ func SearchTrack(client *spotify.Client, query *TrackQuery) (*Track, error) {
 		// XXX: 这里现在只检查歌名了，不看艺人，艺人在 Query 里就行。
 		//      有些艺人日文的英文、假名、罗马音、汉字不好处理。
 		if trackMatches(&t, query, trackNameMatch /*, trackArtistMatch*/) {
-			track := trackFromSpotify(t.SimpleTrack)
+			track := trackFromSpotify(t)
 			return track, nil
 		}
 	}

@@ -21,7 +21,7 @@ func SpotifyRecommendTracks(client *spotify.Client, seedTrackIds []string, limit
 
 	var tracks []*Track
 	for _, t := range result.Tracks {
-		tracks = append(tracks, trackFromSpotify(t))
+		tracks = append(tracks, trackFromSpotify(spotify.FullTrack{SimpleTrack: t}))
 	}
 	return tracks, nil
 }

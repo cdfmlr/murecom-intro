@@ -19,7 +19,7 @@ type Playlist struct {
 	Tracks        []Track `json:"my_tracks" gorm:"many2many:playlist_tracks"`
 }
 
-func PlaylistFromSpotify(sp spotify.SimplePlaylist, sts []spotify.SimpleTrack) *Playlist {
+func PlaylistFromSpotify(sp spotify.SimplePlaylist, sts []spotify.FullTrack) *Playlist {
 	p := Playlist{
 		Collaborative: sp.Collaborative,
 		Endpoint:      sp.Endpoint,
@@ -63,9 +63,10 @@ type Track struct {
 	TrackNumber int      `json:"track_number"`
 	URI         string   `json:"uri"`
 	Type        string   `json:"type"`
+	ImageUrl    string   `json:"image_url"`
 }
 
-func trackFromSpotify(st spotify.SimpleTrack) *Track {
+func trackFromSpotify(st spotify.FullTrack) *Track {
 	t := Track{
 		Artist:      []Artist{},
 		DiscNumber:  st.DiscNumber,
@@ -81,6 +82,9 @@ func trackFromSpotify(st spotify.SimpleTrack) *Track {
 	}
 	for _, a := range st.Artists {
 		t.Artist = append(t.Artist, *artistFromSpotify(a))
+	}
+	if len(st.Album.Images) > 0 {
+		t.ImageUrl = st.Album.Images[0].URL
 	}
 
 	return &t

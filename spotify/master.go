@@ -52,7 +52,7 @@ func CrawlPlaylistsAndTracks(seed string, maxNum int) {
 				defer wg.Done()
 				defer logProgress(ct, maxNum, startTime)
 
-				var tracks []spotify.SimpleTrack
+				var tracks []spotify.FullTrack
 
 				cli := NewSpotifyClient()
 

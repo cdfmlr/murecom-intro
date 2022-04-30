@@ -93,8 +93,8 @@ const (
 // FetchTracks 获取给定的 playlist 中的曲目
 //
 // 返回一个出 spotify.SimpleTrack 的 chan （带缓冲: size = TracksPageLimit），结果这个 chan 传
-func FetchTracks(client *spotify.Client, playlist *spotify.SimplePlaylist) <-chan spotify.SimpleTrack {
-	ch := make(chan spotify.SimpleTrack, TracksPageLimit)
+func FetchTracks(client *spotify.Client, playlist *spotify.SimplePlaylist) <-chan spotify.FullTrack {
+	ch := make(chan spotify.FullTrack, TracksPageLimit)
 
 	go func() {
 		counter := 0 // 记录出了多少了
@@ -113,7 +113,7 @@ func FetchTracks(client *spotify.Client, playlist *spotify.SimplePlaylist) <-cha
 
 		// Yield first page
 		for _, t := range res.Tracks {
-			ch <- t.Track.SimpleTrack
+			ch <- t.Track
 			counter++
 		}
 
@@ -137,7 +137,7 @@ func FetchTracks(client *spotify.Client, playlist *spotify.SimplePlaylist) <-cha
 
 			// yield
 			for _, t := range res.Tracks {
-				ch <- t.Track.SimpleTrack
+				ch <- t.Track
 				counter++
 			}
 
