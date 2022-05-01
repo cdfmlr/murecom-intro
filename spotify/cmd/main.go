@@ -12,6 +12,7 @@ import (
 )
 
 var configFile = flag.String("config", "config.json", "/path/to/config/file")
+var runComplementTracksImage = flag.Bool("complementTracksImage", false, "run ComplementTracksImage instead of CrawlPlaylistsAndTracks")
 
 // Profile for debug
 const (
@@ -39,9 +40,14 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
-	spotify.CrawlPlaylistsAndTracks(
-		spotify.Config.Seed,
-		spotify.Config.Playlists)
+	switch {
+	case *runComplementTracksImage:
+		spotify.ComplementTracksImage()
+	default:
+		spotify.CrawlPlaylistsAndTracks(
+			spotify.Config.Seed,
+			spotify.Config.Playlists)
+	}
 
 	if Profile {
 		f, err := os.Create(path.Join(
