@@ -148,6 +148,22 @@ class NextSongRecommender(ABC):
         raise NotImplemented
 
 
+def sql_sanitize(s: str) -> str:
+    """sanitize database inputs texts to prevent SQL injections
+
+    :param s: string to input to sql
+    :return: sanitized string
+    """
+    cs = f'{s}'
+    for c in cs:
+        if not c.isalnum() and not c.isalpha():
+            s = s.replace(c, ' ')
+    # punc = r"""!()-[]{};:'"\,<>./?@#$%^&*_~+="""
+    # for p in punc:
+    #     s = s.replace(p, ' ')
+    return s
+
+
 class SurpriseRecommender(NextSongRecommender):
     def __init__(self, db, model_filename):
         self._db = db
@@ -176,7 +192,7 @@ class SurpriseRecommender(NextSongRecommender):
         # 用 FTS 优化: https://www.sqlite.org/fts5.html
         #   CREATE VIRTUAL TABLE tracks_name_fts USING fts5(name, id);
         #   INSERT INTO tracks_name_fts SELECT name, id FROM tracks;
-        # TODO(name): SQL inject
+        name = sql_sanitize(name)
         c.execute(f"SELECT id FROM tracks_name_fts WHERE name MATCH '{name}' LIMIT {limit}")
         name_matched_ids = c.fetchall()  # [(id, ), ...]
 
