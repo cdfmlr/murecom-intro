@@ -144,7 +144,7 @@ class AlwaysMatcher(TrackMatcher):
 
 class NextSongRecommender(ABC):
     @abstractmethod
-    def recommend_next_song(self, seed: NextSongSeed, k=5) -> List[NextSong]:
+    def recommend_next_song(self, seed: NextSongSeed, k=5, shift=None) -> List[NextSong]:
         raise NotImplemented
 
 
@@ -202,12 +202,20 @@ class SurpriseRecommender(NextSongRecommender):
                 return tid
         raise ValueError("track not found")
 
-    def find_sim(self, track_id, k=5) -> list:
+    def find_sim(self, track_id, k=5, shift=None) -> list:
         """ 找和 track_id 曲目最相近的 k 首歌
 
+        :param k: 找到 track_id 的 k 个近邻
+        :param shift: 偏移 k 个近邻，避免反复推荐同样的几个东西：
+            从模型获取 k+shift 个近邻，然后输出后 shift 个结果（丢弃前 shift 个近邻）。
+            default shift=None: `shift = k / 3`
         :return: list of tracks [{id, name, artists, image}, ...] : len=(k+1), [0] 是输入的 track_id
         """
-        sim = self.model.get_neighbors(iid=self.model.trainset.to_inner_iid(track_id), k=k)
+
+        shift = k // 3 if shift is None else int(shift)
+
+        sim = self.model.get_neighbors(iid=self.model.trainset.to_inner_iid(track_id), k=k + shift)
+        sim = sim[shift:]
 
         c = self._conn.cursor()
 
@@ -228,9 +236,9 @@ class SurpriseRecommender(NextSongRecommender):
         # disc_number|duration|explicit|endpoint|id|name|preview_url|track_number|uri|type|image_url | artists
         return [{"id": r[4], "name": r[5], "artists": r[-1], "image": r[-2]} for r in tracks]
 
-    def recommend_next_song(self, seed: NextSongSeed, k=5) -> List[NextSong]:
+    def recommend_next_song(self, seed: NextSongSeed, k=5, shift=None) -> List[NextSong]:
         seed_id = self.find_track_id(seed.track_name, seed.artists)
-        recommended = self.find_sim(seed_id, k)
+        recommended = self.find_sim(seed_id, k, shift)
         return list(
             map(lambda x: NextSong(x["id"], x["name"], x["artists"], x["image"]),
                 recommended)
@@ -245,13 +253,16 @@ class Server:
         track_name = request.query.get("track_name") or ""
         artists = request.get("artists") or ""
         k = int(request.query.get("k") or 5)
+        shift = int(request.query.get("shift") or -1)
+        shift = shift if shift > 0 else None
+        # shift = shift if shift < k else k
 
         if track_name == artists == "":
             raise web.HTTPBadRequest(text="seed track_name and artists expected")
 
         try:
             recommended = self.recommender.recommend_next_song(
-                seed=NextSongSeed(track_name, artists), k=k)
+                seed=NextSongSeed(track_name, artists), k=k, shift=shift)
             return web.json_response(list(map(lambda r: r.__dict__, recommended)))
         except ValueError as e:
             not_founds = ['not part of the trainset', 'track not found']
