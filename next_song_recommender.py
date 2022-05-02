@@ -115,6 +115,7 @@ class NextSong(object):
     track_id: str
     track_name: str
     artists: List[str]
+    album_cover: str
 
 
 class TrackMatcher(ABC):
@@ -175,6 +176,7 @@ class SurpriseRecommender(NextSongRecommender):
         # 用 FTS 优化: https://www.sqlite.org/fts5.html
         #   CREATE VIRTUAL TABLE tracks_name_fts USING fts5(name, id);
         #   INSERT INTO tracks_name_fts SELECT name, id FROM tracks;
+        # TODO(name): SQL inject
         c.execute(f"SELECT id FROM tracks_name_fts WHERE name MATCH '{name}' LIMIT {limit}")
         name_matched_ids = c.fetchall()  # [(id, ), ...]
 
@@ -187,7 +189,7 @@ class SurpriseRecommender(NextSongRecommender):
     def find_sim(self, track_id, k=5) -> list:
         """ 找和 track_id 曲目最相近的 k 首歌
 
-        :return: list of tracks [{id, name, artists}, ...] : len=(k+1), [0] 是输入的 track_id
+        :return: list of tracks [{id, name, artists, image}, ...] : len=(k+1), [0] 是输入的 track_id
         """
         sim = self.model.get_neighbors(iid=self.model.trainset.to_inner_iid(track_id), k=k)
 
@@ -207,14 +209,14 @@ class SurpriseRecommender(NextSongRecommender):
             tk = tk[0]
             tracks.append(tk + (self.find_artists(tid),))
         c.close()
-
-        return [{"id": r[4], "name": r[5], "artists": r[-1]} for r in tracks]
+        # disc_number|duration|explicit|endpoint|id|name|preview_url|track_number|uri|type|image_url | artists
+        return [{"id": r[4], "name": r[5], "artists": r[-1], "image": r[-2]} for r in tracks]
 
     def recommend_next_song(self, seed: NextSongSeed, k=5) -> List[NextSong]:
         seed_id = self.find_track_id(seed.track_name, seed.artists)
         recommended = self.find_sim(seed_id, k)
         return list(
-            map(lambda x: NextSong(x["id"], x["name"], x["artists"]),
+            map(lambda x: NextSong(x["id"], x["name"], x["artists"], x["image"]),
                 recommended)
         )
 
